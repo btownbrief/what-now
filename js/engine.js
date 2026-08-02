@@ -309,6 +309,11 @@ function scoreCandidate(c, ctx, chips) {
   if (c.kind === 'club') {
     s = chips.has('people') ? 50 : 25;
     if (c.featured) s += 12;
+    // Saturday morning is Coffee Club morning — the house always features its own
+    if (c.featured && ctx.now.getDay() === 6 && ctx.hour >= 7 && ctx.hour < 11) {
+      s += 25;
+      why.push("it's Saturday morning and coffee is happening");
+    }
     why.push("it's real humans, not an algorithm");
   }
 

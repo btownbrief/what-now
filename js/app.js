@@ -11,11 +11,32 @@ const state = {
   data: null,
   ctx: null,
   chips: new Set(),
-  recent: [],       // last few answer ids, so "again" never repeats itself
+  recent: loadRecent(), // recent answer ids — survives reloads so tomorrow opens fresh
   current: null,
   poolSize: 0,
   ready: false,
+  rollId: 0,        // invalidates an in-flight roll if a new spin starts
 };
+
+/* Remember what we already suggested for ~20 hours. "Again" should never
+   repeat itself, and neither should tomorrow morning's first spin. */
+function loadRecent() {
+  try {
+    const cut = Date.now() - 20 * 3600 * 1000;
+    return JSON.parse(localStorage.getItem('wn_recent') || '[]')
+      .filter((x) => x.at > cut)
+      .map((x) => x.id);
+  } catch { return []; }
+}
+
+function rememberAnswer(id) {
+  state.recent.push(id);
+  if (state.recent.length > 8) state.recent.shift();
+  try {
+    const now = Date.now();
+    localStorage.setItem('wn_recent', JSON.stringify(state.recent.map((rid) => ({ id: rid, at: now }))));
+  } catch { /* fine */ }
+}
 
 const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -57,6 +78,8 @@ async function init() {
   $('again').addEventListener('click', () => doSpin(true));
   $('commit').addEventListener('click', showDone);
   $('done-back').addEventListener('click', () => { $('done').hidden = true; });
+  $('wild').addEventListener('click', wildcard);
+  $('share').addEventListener('click', shareAnswer);
 
   // preview hooks, same spirit as the sunset page's ?sscore= overrides:
   // ?chips=free,outside preselects paths, ?auto=1 spins on load, ?done=1 shows the end state
@@ -68,6 +91,7 @@ async function init() {
     });
   }
   if (qs.get('auto')) doSpin(true);
+  if (qs.get('wild')) wildcard();
   if (qs.get('done')) { if (!state.current) doSpin(true); showDone(); }
 }
 
@@ -122,6 +146,7 @@ function fmt10(n) { return `${Number.isInteger(n) ? n : n.toFixed(1)}/10`; }
 
 function doSpin(short = false) {
   if (!state.ready) return;
+  const roll = ++state.rollId; // cancels any roll already in flight
   const pool = buildPool(state.data, state.ctx, state.chips);
   state.poolSize = pool.length;
 
@@ -131,16 +156,17 @@ function doSpin(short = false) {
   $('spin').hidden = true;
 
   if (!pool.length) {
+    card.classList.remove('rolling');
     renderEmpty();
     return;
   }
 
   const choice = pick(pool, state.recent);
   state.current = choice;
-  state.recent.push(choice.id);
-  if (state.recent.length > 6) state.recent.shift();
+  rememberAnswer(choice.id);
 
   if (REDUCED || short) {
+    card.classList.remove('rolling');
     renderAnswer(choice);
     return;
   }
@@ -154,6 +180,7 @@ function doSpin(short = false) {
   $('answer-blurb').textContent = '';
   $('answer-link').hidden = true;
   const step = () => {
+    if (roll !== state.rollId) return; // a newer spin took over
     if (delay > 260) {
       card.classList.remove('rolling');
       renderAnswer(choice);
@@ -165,6 +192,43 @@ function doSpin(short = false) {
     setTimeout(step, delay);
   };
   step();
+}
+
+/* His original idea, kept pure: ignore the filters, ignore the scores,
+   pull anything from the whole hat. Chaos as a feature. */
+function wildcard() {
+  if (!state.ready) return;
+  state.rollId += 1; // cancel any roll in flight
+  const pool = buildPool(state.data, state.ctx, new Set());
+  if (!pool.length) return;
+  $('answer').hidden = false;
+  $('spin').hidden = true;
+  const choice = pool[Math.floor(Math.random() * pool.length)];
+  state.current = choice;
+  rememberAnswer(choice.id);
+  state.poolSize = pool.length;
+  document.querySelector('.answer-card').classList.remove('rolling');
+  renderAnswer(choice);
+  $('answer-kicker').textContent = 'pure chance';
+  $('pool-note').textContent = `one of ${pool.length}, straight from the hat`;
+}
+
+/* The best answer to "I want people around" is bringing one. */
+async function shareAnswer() {
+  const c = state.current;
+  if (!c) return;
+  const text = `${c.title}${metaLine(c) ? ' — ' + metaLine(c) : ''}. Coming?`;
+  const url = c.url || undefined;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: 'What Now', text, url });
+    } else {
+      await navigator.clipboard.writeText(text + (url ? ' ' + url : ''));
+      const btn = $('share');
+      btn.textContent = 'copied — send it';
+      setTimeout(() => { btn.textContent = 'drag a friend →'; }, 1600);
+    }
+  } catch { /* user backed out of the share sheet — no drama */ }
 }
 
 function renderEmpty() {
@@ -238,6 +302,8 @@ function renderTonight(ctx, data) {
     line = `Sun’s down at <strong>${fmtTime(ctx.sunset)}</strong>. No read on the sky yet — look west anyway.`;
   } else if (score >= 6.5) {
     line = `Sunset scores <strong>${fmt10(score)}</strong>. ${spot ? `Be at <strong>${esc(spot.name)}</strong> by <strong>${by}</strong>.` : `Be somewhere west-facing by <strong>${by}</strong>.`}`;
+    el.classList.add('golden');
+    if (ctx.minsToSunset <= 80) $('tonight').querySelector('.tonight-eyebrow').textContent = 'tonight — leave soon';
   } else if (score >= 4.5) {
     line = `Sunset scores <strong>${fmt10(score)}</strong> — worth a walk if you’re near the water around <strong>${by}</strong>.`;
   } else {

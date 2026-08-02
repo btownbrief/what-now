@@ -20,8 +20,12 @@ screen and one decision.
 3. **You hit the big button.** A quick slot-machine roll, then one answer with
    its reasoning spelled out: *"because it starts in 45 min · it's free ·
    it's 77° out."*
-4. **"Nah, again"** re-spins (it remembers what it already showed you).
-   **"I'm going"** ends the session on purpose.
+4. **"Nah, again"** re-spins (it remembers what it already suggested for ~20
+   hours, so tomorrow doesn't open with yesterday's answer). **"I'm going"**
+   ends the session on purpose.
+5. Under the answer: **🎲 pure chance** (ignore the filters, ignore the
+   scores — anything from the whole hat) and **drag a friend →** (share sheet
+   on phones, copy-to-clipboard elsewhere).
 
 ## Where answers come from
 
@@ -58,7 +62,12 @@ gold accent, and a phase-aware sky gradient (dawn/day/golden/dusk/night from
 real sun times). Shared family nav via `play.btownbrief.com/nav.js`.
 
 Installable: web manifest + icons + apple-touch meta. Add to Home Screen and
-it opens standalone, which is the intended way to use it.
+it opens standalone, which is the intended way to use it — in standalone mode
+the family nav hides itself so it reads as an app, not a page.
+
+Small house rules baked into the scoring: the featured club (our own Meetup)
+gets a Saturday-morning Coffee Club boost, and when the sunset scores ≥6.5
+the tonight card goes gold and starts saying "leave soon."
 
 ## Run locally
 
@@ -69,7 +78,7 @@ open http://localhost:8642
 
 Preview hooks (same spirit as the sunset page's `?sscore=`):
 `?auto=1` spins on load · `?chips=free,outside` preselects paths ·
-`?done=1` shows the end state.
+`?wild=1` pulls a pure-chance answer · `?done=1` shows the end state.
 
 ## Honest limitations (v1)
 

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en" data-phase="day">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#06080A">
+  <title>What Now — one good answer for Burlington, today</title>
+  <meta name="description" content="Open this instead of a feed. One good thing to do in Burlington right now, built from live events, weather, the lake, and tonight's sunset.">
+
+  <!-- installable: this is meant to live on your home screen, not in a tab -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="What Now">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="BTown Brief">
+  <meta property="og:title" content="What Now — one good answer for Burlington, today">
+  <meta property="og:description" content="Open this instead of a feed. One good thing to do right now, from live Burlington data.">
+  <meta name="twitter:card" content="summary">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://guide.btownbrief.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-btown-about="off">
+  <div class="sky" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <main class="shell">
+    <header class="top">
+      <p class="brand">What Now <span class="brand-sep">·</span> BTown Brief</p>
+      <h1 class="greeting" id="greeting">Burlington, right&nbsp;now.</h1>
+      <p class="ctx-strip" id="ctx-strip">reading the sky&hellip;</p>
+    </header>
+
+    <section class="paths" aria-label="Narrow it down">
+      <button class="chip" data-chip="free" aria-pressed="false">I'm broke</button>
+      <button class="chip" data-chip="outside" aria-pressed="false">get me outside</button>
+      <button class="chip" data-chip="people" aria-pressed="false">people, please</button>
+      <button class="chip" data-chip="twohours" aria-pressed="false">I've got ~2 hours</button>
+    </section>
+
+    <div class="stage">
+      <button class="big-spin" id="spin" disabled>
+        <span class="spin-ring" aria-hidden="true"></span>
+        <span class="spin-label" id="spin-label">warming up&hellip;</span>
+      </button>
+
+      <section class="answer" id="answer" hidden aria-live="polite">
+        <div class="card answer-card">
+          <p class="kicker" id="answer-kicker"></p>
+          <h2 class="answer-title" id="answer-title"></h2>
+          <p class="answer-meta" id="answer-meta"></p>
+          <p class="answer-blurb" id="answer-blurb"></p>
+          <div class="answer-actions">
+            <a class="btn btn-ghost" id="answer-link" target="_blank" rel="noopener" hidden>details</a>
+            <button class="btn btn-ghost" id="again">nah, again</button>
+            <button class="btn btn-solid" id="commit">I'm going</button>
+          </div>
+        </div>
+        <p class="pool-note" id="pool-note"></p>
+      </section>
+    </div>
+
+    <section class="tonight card" id="tonight" hidden>
+      <p class="tonight-eyebrow">tonight</p>
+      <p class="tonight-line" id="tonight-line"></p>
+    </section>
+
+    <footer class="fine">
+      <p id="today-count"></p>
+      <p class="data-credit">Live data from <a href="https://guide.btownbrief.com" rel="noopener">the city guide</a> — events, weather, the lake, the sunset. No feed. No algorithm ranking you. <span id="freshness"></span></p>
+    </footer>
+  </main>
+
+  <div class="done-overlay" id="done" hidden>
+    <div class="done-inner">
+      <p class="done-big">Good.</p>
+      <p class="done-what" id="done-what"></p>
+      <p class="done-small">Now put the phone down.</p>
+      <button class="btn btn-ghost done-back" id="done-back">back</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+  <script src="https://play.btownbrief.com/nav.js" defer></script>
+</body>
+</html>

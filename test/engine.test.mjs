@@ -7,7 +7,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildContext, buildPool, fmtTime, outdoorRisks, clubMatchesToday } from '../js/engine.js';
+import { buildContext, buildPool, fmtTime, outdoorRisks, clubMatchesToday, distFromChurchM } from '../js/engine.js';
 
 /* ---------- fixtures ---------- */
 /* Tue Aug 4 2026, Burlington (EDT, UTC-4). Sunrise 5:43, sunset 20:14. */
@@ -26,6 +26,7 @@ function goodWeather(now, overrides = {}) {
     sun: {
       sunrise: '2026-08-04T05:43-04:00',
       sunset: '2026-08-04T20:14-04:00',
+      sunset_tomorrow: '2026-08-05T20:13-04:00',
       ...(overrides.sun || {}),
     },
     hourly: { hours: [] },
@@ -328,4 +329,167 @@ test('outdoor event in rain survives with a caution flag (wildcard filters those
   const e = p.find((c) => c.id === 'evt-out');
   assert.ok(e, 'organized outdoor events may stay in the ranked pool during rain');
   assert.equal(e.caution, true);
+});
+
+/* ---------- v2: planning modes ---------- */
+
+const poolM = (data, now, mode, chips = new Set()) => buildPool(data, buildContext(data, now, mode), chips);
+
+function goodForecast(overrides = {}) {
+  return {
+    periods: [
+      { name: 'Tuesday', start: '2026-08-04T06:00:00-04:00', is_day: true, temp_f: 83, pop: 7, wind: 'S 8 mph', short: 'Sunny' },
+      { name: 'Tuesday Night', start: '2026-08-04T18:00:00-04:00', is_day: false, temp_f: 63, pop: 5, wind: 'S 5 mph', short: 'Mostly Clear' },
+      { name: 'Wednesday', start: '2026-08-05T06:00:00-04:00', is_day: true, temp_f: 85, pop: overrides.pop ?? 4, wind: overrides.wind || 'NW 7 mph', short: overrides.short || 'Sunny' },
+    ],
+  };
+}
+
+test('tonight mode: an 8pm show is the answer when planning at 2pm', () => {
+  const data = { events: { events: [
+    evt('show', '2026-08-04T20:00:00-04:00', '2026-08-04T22:00:00-04:00'),
+    evt('brunch', '2026-08-04T10:00:00-04:00', '2026-08-04T12:00:00-04:00'),
+  ] } };
+  const now = NY(14);
+  assert.deepEqual(ids(poolM(data, now, 'tonight')), ['evt-show']);
+  // and in 'now' mode at 2pm, the 8pm show is too far out
+  assert.deepEqual(ids(poolM(data, now, 'now')), []);
+});
+
+test('tonight mode: outdoor-only spots need an evening slot, and no swim', () => {
+  const now = NY(14);
+  const data = {
+    weather: goodWeather(now),
+    beaches: goodBeaches(now),
+    things: [
+      OUTDOOR_THING, // untagged outdoor walk — not an after-dark plan
+      { ...OUTDOOR_THING, id: 'stars', name: 'Stargazing', time_of_day: ['Evening'] },
+    ],
+  };
+  const p = poolM(data, now, 'tonight');
+  assert.ok(!ids(p).includes('thing-walk'));
+  assert.ok(ids(p).includes('thing-stars'));
+  assert.equal(p.find((c) => c.kind === 'beach'), undefined, 'the swim is a now-only answer');
+});
+
+test('tomorrow mode: tomorrow\'s events qualify, today\'s do not, clubs match tomorrow\'s day', () => {
+  const data = {
+    weather: { ...goodWeather(NY(14)), forecast: goodForecast() },
+    events: { events: [
+      evt('today', '2026-08-04T20:00:00-04:00', '2026-08-04T22:00:00-04:00'),
+      evt('tmrw', '2026-08-05T19:00:00-04:00', '2026-08-05T21:00:00-04:00', { date: '2026-08-05' }),
+    ] },
+    clubs: { clubs: [
+      { name: 'Wed Volleyball', what: 'Volleyball', when: 'Wednesdays at UVM' },
+      { name: 'Tue Chess', what: 'Chess', when: 'Tuesdays 7pm' },
+    ] },
+  };
+  const p = poolM(data, NY(14), 'tomorrow'); // Tue 2pm, planning Wed
+  const got = ids(p);
+  assert.ok(got.includes('evt-tmrw'));
+  assert.ok(!got.includes('evt-today'));
+  assert.ok(got.includes('club-wed-volleyball'));
+  assert.ok(!got.includes('club-tue-chess'));
+});
+
+test('tomorrow mode: no forecast period = outdoor answers fail closed', () => {
+  const now = NY(14);
+  const data = {
+    weather: goodWeather(now), // no forecast key at all
+    things: [OUTDOOR_THING, INDOOR_THING],
+  };
+  assert.deepEqual(ids(poolM(data, now, 'tomorrow')), ['thing-museum']);
+});
+
+test('tomorrow mode: a rainy forecast keeps outdoor-only spots out', () => {
+  const now = NY(14);
+  const data = {
+    weather: { ...goodWeather(now), forecast: goodForecast({ pop: 80, short: 'Showers And Thunderstorms' }) },
+    things: [OUTDOOR_THING, INDOOR_THING],
+  };
+  assert.deepEqual(ids(poolM(data, now, 'tomorrow')), ['thing-museum']);
+});
+
+test('tomorrow mode: the sunset plan uses tomorrow\'s sunset', () => {
+  const now = NY(14);
+  const data = {
+    weather: { ...goodWeather(now), forecast: goodForecast() },
+    sunsetSpots: { spots: [{ name: 'Waterfront Park', area: 'Downtown waterfront', walk_min: 8 }] },
+  };
+  const ctx = buildContext(data, now, 'tomorrow');
+  ctx.sunsetScore = 8;
+  const p = buildPool(data, ctx, new Set());
+  const s = p.find((c) => c.kind === 'sunset');
+  assert.ok(s, 'expected a sunset plan for tomorrow evening');
+  assert.equal(s.sunsetLabel, '8:13pm'); // sun.sunset_tomorrow (8:13), not today's 8:14
+});
+
+/* ---------- v2: hobby path ---------- */
+
+const HOBBIES = { hobbies: [
+  { id: 'skiing', name: 'Skiing & riding', emoji: '⛷️', season: 'December–March', months: [12, 1, 2, 3], what: 'Snow.', start: 'Bolton night pass.' },
+  { id: 'sailing', name: 'Sailing', emoji: '⛵', season: 'May–October', months: [5, 6, 7, 8, 9, 10], what: 'Lake.', start: 'Community Sailing Center.' },
+  { id: 'chess', name: 'Chess', season: 'year-round', months: [], what: 'Board.', start: 'Tuesdays downtown.' },
+] };
+
+test('hobby chip: only in-month hobbies, and only hobbies', () => {
+  const now = NY(14);
+  const data = { hobbies: HOBBIES, things: [INDOOR_THING], weather: goodWeather(now) };
+  const p = pool(data, now, new Set(['hobby']));
+  const got = ids(p);
+  assert.ok(got.includes('hobby-sailing'), 'August: sailing is in season');
+  assert.ok(got.includes('hobby-chess'), 'no months = year-round');
+  assert.ok(!got.includes('hobby-skiing'), 'no skiing in August');
+  assert.ok(p.every((c) => c.kind === 'hobby'), 'the hobby chip swaps the pool');
+});
+
+test('without the hobby chip, hobbies stay off the shelf', () => {
+  const now = NY(14);
+  const data = { hobbies: HOBBIES, things: [INDOOR_THING], weather: goodWeather(now) };
+  assert.ok(pool(data, now).every((c) => c.kind !== 'hobby'));
+});
+
+/* ---------- v2: close by ---------- */
+
+test('distFromChurchM: Church St is 0-ish, Shelburne is far, junk is null', () => {
+  assert.ok(distFromChurchM(44.4759, -73.2121) < 20);
+  assert.ok(distFromChurchM(44.379, -73.227) > 5000);
+  assert.equal(distFromChurchM(null, -73.2), null);
+});
+
+test('close by: verified coords or walkable neighborhood — nothing else', () => {
+  const now = NY(14);
+  const data = {
+    weather: goodWeather(now),
+    things: [
+      { ...INDOOR_THING, id: 'downtown', name: 'Downtown spot', coords: [44.4762, -73.2128] },
+      { ...INDOOR_THING, id: 'shelburne', name: 'Shelburne spot', neighborhood: 'Shelburne', coords: [44.379, -73.227] },
+      { ...INDOOR_THING, id: 'one', name: 'ONE spot', neighborhood: 'Old North End' }, // no coords, walkable hood
+      { ...INDOOR_THING, id: 'mystery', name: 'No location', neighborhood: 'Greater Burlington' },
+    ],
+    events: { events: [
+      evt('near', '2026-08-04T15:00:00-04:00', '2026-08-04T17:00:00-04:00', { lat: 44.4790, lng: -73.2150 }),
+      evt('nocoords', '2026-08-04T15:00:00-04:00', '2026-08-04T17:00:00-04:00'),
+    ] },
+    clubs: { clubs: [{ name: 'Anywhere Club', what: 'x', when: 'Daily' }] },
+  };
+  const got = ids(pool(data, now, new Set(['closeby'])));
+  assert.deepEqual(got.sort(), ['evt-near', 'thing-downtown', 'thing-one'].sort());
+});
+
+/* ---------- v2: affinity ---------- */
+
+test('a thumbs-down nudges a category down, never out', () => {
+  const now = NY(14);
+  const data = { weather: goodWeather(now), things: [INDOOR_THING, { ...INDOOR_THING, id: 'other', name: 'Other', category: 'Shop' }] };
+  const base = buildContext(data, now);
+  const soured = buildContext(data, now);
+  soured.affinity = { 'thing:Museum': -2 };
+  const withCat = (d) => ({ ...d, things: d.things.map((t, i) => ({ ...t, category: i === 0 ? 'Museum' : 'Shop' })) });
+  const p1 = buildPool(withCat(data), base, new Set());
+  const p2 = buildPool(withCat(data), soured, new Set());
+  const m1 = p1.find((c) => c.id === 'thing-museum').score_;
+  const m2 = p2.find((c) => c.id === 'thing-museum').score_;
+  assert.ok(m2 < m1, 'soured category scores lower');
+  assert.ok(p2.some((c) => c.id === 'thing-museum'), 'but stays in the pool');
 });

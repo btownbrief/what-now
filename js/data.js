@@ -19,6 +19,7 @@ const ENDPOINTS = {
   things: 'things.json',
   clubs: 'clubs.json',
   sunsetSpots: 'sunset-spots.json',
+  hobbies: 'hobbies.json',
 };
 
 function cacheGet(key) {
@@ -50,8 +51,8 @@ async function fetchJSON(path) {
 }
 
 /* Returns { data, status }.
-   data:   { weather, beaches, events, things, clubs, sunsetSpots } — any may
-           be null; the engine fails closed on whatever's missing.
+   data:   { weather, beaches, events, things, clubs, sunsetSpots, hobbies } —
+           any may be null; the engine fails closed on whatever's missing.
    status: same keys → { state: 'live' | 'cache' | 'stale' | 'absent', ageMin }
            'live'   fetched from the network just now
            'cache'  local copy under 10 minutes old

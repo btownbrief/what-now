@@ -23,9 +23,36 @@ screen and one decision.
 4. **"Nah, again"** re-spins (it remembers what it already suggested for ~20
    hours, so tomorrow doesn't open with yesterday's answer). **"I'm going"**
    ends the session on purpose.
-5. Under the answer: **🎲 pure chance** (ignore the filters, ignore the
-   scores — anything from the whole hat) and **drag a friend →** (share sheet
-   on phones, copy-to-clipboard elsewhere).
+5. Under the answer: **🎲 pure chance** (ignore the filters and the ranking —
+   uniform from the hat, though the hat itself only ever holds safe,
+   right-now answers) and **drag a friend →** (share sheet on phones,
+   copy-to-clipboard elsewhere).
+
+## Ground rules
+
+The pool is gated where it's built, so no path around the engine — chips,
+respins, pure chance — can reach an unsafe or nonsensical answer:
+
+- **Burlington time.** "Today", dayparts, and clock displays are computed in
+  `America/New_York`, not device time. 2 a.m. is late night, not morning,
+  and an event six hours out is not an answer to "now" (the window is ~3h).
+- **Outdoor safety.** Dangerous cold or heat (feels-like ≤ 15° / ≥ 100°),
+  high wind, unhealthy air (AQI > 150), any active weather alert, or *no
+  current weather reading at all* removes everything strictly outdoor from
+  the pool. Rain removes outdoor-only spots; after dark, outdoor-only spots
+  must be tagged for the evening. A weather feed more than 3h old counts as
+  no reading.
+- **The swim is earned.** A swim appears only in season (Jun–Sep), in
+  daylight with 90+ minutes to a *known* sunset, when it's 74°+, the lake
+  gage reading is real, recent, and 65°+, and the beach's clean water test
+  is fresh (the city samples twice a week). Any missing piece = no swim.
+- **Clubs keep their hours.** Clubs only show 8 a.m.–10 p.m., day-specific
+  schedules ("Tuesdays 7pm") only show on their day, and a club is only
+  called free when it says it's free.
+- **Honesty on failure.** Every fetch has an 8s timeout; a stalled feed
+  can't hold the app at "warming up". Stale caches are served for at most
+  24h and the footer says what's actually live — "Live data" is earned,
+  not assumed.
 
 ## Where answers come from
 
@@ -80,9 +107,19 @@ Preview hooks (same spirit as the sunset page's `?sscore=`):
 `?auto=1` spins on load · `?chips=free,outside` preselects paths ·
 `?wild=1` pulls a pure-chance answer · `?done=1` shows the end state.
 
+## Tests
+
+The engine is a pure ES module, so the adversarial-review edge cases run
+straight in Node (the UTC env proves Burlington time wins over device time):
+
+```
+TZ=UTC node --test test/engine.test.mjs
+```
+
 ## Honest limitations (v1)
 
 - Answers assume "today"; there's no "plan tomorrow" mode yet.
-- Data caches in localStorage for 10 minutes — fine for a decision app.
+- Data caches in localStorage for 10 minutes (stale copies serve for at most
+  24h after a failed fetch, labeled as such) — fine for a decision app.
 - Hobby *discovery* is limited to what clubs.json and things.json carry; a
   dedicated "pick up a hobby" path is the obvious v2.

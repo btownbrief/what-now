@@ -12,7 +12,9 @@ const OPEN_METEO_URL =
 
 async function fetchCloudLayers() {
   try {
-    const res = await fetch(OPEN_METEO_URL);
+    const signal = (typeof AbortSignal !== 'undefined' && AbortSignal.timeout)
+      ? AbortSignal.timeout(8000) : undefined;
+    const res = await fetch(OPEN_METEO_URL, { signal });
     if (!res.ok) return null;
     return await res.json();
   } catch {

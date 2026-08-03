@@ -2,7 +2,7 @@
    Nothing here scrolls forever. The end state is the phone in a pocket. */
 
 import { loadAll } from './data.js';
-import { buildContext, buildPool, pick, fmtTime } from './engine.js';
+import { buildContext, buildPool, pick, fmtTime, outdoorRisks } from './engine.js';
 import { fetchCloudLayers, computeSunsetScore } from './sunset-score.js';
 
 const $ = (id) => document.getElementById(id);
@@ -43,20 +43,33 @@ const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 init();
 
 async function init() {
-  const [data, om] = await Promise.all([loadAll(), fetchCloudLayers()]);
+  // Guide feeds gate the button (each request has its own timeout, so this
+  // is bounded); Open-Meteo does NOT — the sunset score starts on the
+  // degraded NWS read and upgrades in place when the cloud layers land.
+  const { data, status } = await loadAll();
   state.data = data;
 
   const ctx = buildContext(data);
-  const ss = computeSunsetScore(ctx.sunset, om, data.weather);
+  const ss = computeSunsetScore(ctx.sunset, null, data.weather);
   ctx.sunsetScore = ss ? ss.score : null;
   ctx.sunsetDegraded = ss ? ss.degraded : false;
   state.ctx = ctx;
+
+  fetchCloudLayers().then((om) => {
+    if (!om) return;
+    const better = computeSunsetScore(ctx.sunset, om, data.weather);
+    if (!better) return;
+    ctx.sunsetScore = better.score;
+    ctx.sunsetDegraded = better.degraded;
+    renderContextStrip(ctx);
+    renderTonight(ctx, data);
+  });
 
   paintPhase(ctx);
   renderGreeting(ctx);
   renderContextStrip(ctx);
   renderTonight(ctx, data);
-  renderFooter(ctx, data);
+  renderFooter(ctx, data, status);
 
   state.ready = true;
   const spin = $('spin');
@@ -112,14 +125,15 @@ function paintPhase(ctx) {
     else if (m(now, set) < 50) phase = 'dusk';
     else phase = 'night';
   } else {
-    const h = now.getHours();
+    const h = ctx.hour; // Burlington hour, not device hour
     phase = h < 6 || h >= 21 ? 'night' : h < 9 ? 'dawn' : h < 11 ? 'morning' : h < 19 ? 'day' : 'dusk';
   }
   document.documentElement.dataset.phase = phase;
 }
 
 function renderGreeting(ctx) {
-  const day = ctx.now.toLocaleDateString('en-US', { weekday: 'long' });
+  // ctx.hour is already Burlington time; keep the weekday in the same zone
+  const day = ctx.now.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/New_York' });
   const part = ctx.hour < 5 ? 'Late night' : ctx.hour < 12 ? `${day} morning` : ctx.hour < 17 ? `${day} afternoon` : ctx.hour < 22 ? `${day} evening` : 'Late night';
   $('greeting').textContent = `${part} in Burlington.`;
 }
@@ -194,12 +208,15 @@ function doSpin(short = false) {
   step();
 }
 
-/* His original idea, kept pure: ignore the filters, ignore the scores,
-   pull anything from the whole hat. Chaos as a feature. */
+/* Ignore the filters, ignore the RANKING — but not the ground rules. The
+   hat only ever holds things that are safe and sensible right now (the
+   engine bakes that into the pool), and anything the scorer flagged with a
+   caution (outdoor event in the rain, walk ahead of a downpour) stays out.
+   Within that: uniform chaos, as intended. */
 function wildcard() {
   if (!state.ready) return;
   state.rollId += 1; // cancel any roll in flight
-  const pool = buildPool(state.data, state.ctx, new Set());
+  const pool = buildPool(state.data, state.ctx, new Set()).filter((c) => !c.caution);
   if (!pool.length) return;
   $('answer').hidden = false;
   $('spin').hidden = true;
@@ -232,9 +249,17 @@ async function shareAnswer() {
 }
 
 function renderEmpty() {
+  const ctx = state.ctx;
+  // Only pitch the waterfront walk when a walk is actually a good idea:
+  // daylight, dry, above-freezing-ish, and nothing dangerous in the sky.
+  const walkable = ctx && !ctx.dark && !ctx.rainingNow
+    && ctx.temp != null && ctx.temp >= 40
+    && !outdoorRisks(ctx).length;
   $('answer-kicker').textContent = 'honestly?';
   $('answer-title').textContent = 'Nothing fits all that.';
-  $('answer-meta').textContent = 'Loosen a filter — or skip the plan and take the waterfront walk.';
+  $('answer-meta').textContent = walkable
+    ? 'Loosen a filter — or skip the plan and take the waterfront walk.'
+    : 'Loosen a filter — or call it: some hours are for staying in.';
   $('answer-blurb').textContent = '';
   $('answer-link').hidden = true;
   $('pool-note').textContent = '';
@@ -298,12 +323,15 @@ function renderTonight(ctx, data) {
   const spot = spots[0];
   const by = fmtTime(new Date(ctx.sunset - 20 * 60000));
   let line;
+  // this re-renders when the cloud layers arrive, so reset before styling
+  el.classList.remove('golden');
+  el.querySelector('.tonight-eyebrow').textContent = 'tonight';
   if (score == null) {
     line = `Sun’s down at <strong>${fmtTime(ctx.sunset)}</strong>. No read on the sky yet — look west anyway.`;
   } else if (score >= 6.5) {
     line = `Sunset scores <strong>${fmt10(score)}</strong>. ${spot ? `Be at <strong>${esc(spot.name)}</strong> by <strong>${by}</strong>.` : `Be somewhere west-facing by <strong>${by}</strong>.`}`;
     el.classList.add('golden');
-    if (ctx.minsToSunset <= 80) $('tonight').querySelector('.tonight-eyebrow').textContent = 'tonight — leave soon';
+    if (ctx.minsToSunset <= 80) el.querySelector('.tonight-eyebrow').textContent = 'tonight — leave soon';
   } else if (score >= 4.5) {
     line = `Sunset scores <strong>${fmt10(score)}</strong> — worth a walk if you’re near the water around <strong>${by}</strong>.`;
   } else {
@@ -314,7 +342,7 @@ function renderTonight(ctx, data) {
   el.hidden = false;
 }
 
-function renderFooter(ctx, data) {
+function renderFooter(ctx, data, status) {
   const events = (data.events && data.events.events) || [];
   const today = events.filter(e => e.date === ctx.dateStr && e.status !== 'inactive').length;
   if (today) {
@@ -326,6 +354,23 @@ function renderFooter(ctx, data) {
     const mins = Math.max(0, Math.round((Date.now() - new Date(gen)) / 60000));
     $('freshness').textContent = mins < 90 ? `Events refreshed ${mins} min ago.` : `Events refreshed ${Math.round(mins / 60)}h ago.`;
   }
+
+  // Say what the data actually is. "Live" is earned, not assumed.
+  const states = Object.values(status || {});
+  const current = states.filter(s => s.state === 'live' || s.state === 'cache').length;
+  let line;
+  if (!states.length || current === states.length) {
+    line = 'Live data from';
+  } else if (current === 0) {
+    line = 'Couldn’t reach the guide — nothing here is current. Data (when it loads) comes from';
+  } else {
+    const bad = states.length - current;
+    line = `Live data (mostly) from`;
+    $('freshness').textContent =
+      `${bad} of ${states.length} feeds ${bad === 1 ? 'is' : 'are'} stale or unreachable right now. ` +
+      ($('freshness').textContent || '');
+  }
+  $('data-state').textContent = line;
 }
 
 /* ---------- done ---------- */

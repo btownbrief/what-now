@@ -22,10 +22,8 @@
   <meta property="og:description" content="Open this instead of a feed. One good thing to do right now, from live Burlington data.">
   <meta name="twitter:card" content="summary">
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://guide.btownbrief.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+  <!-- fonts are self-hosted (assets/fonts) — no Google Fonts request -->
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body data-btown-about="off">
@@ -39,11 +37,28 @@
       <p class="ctx-strip" id="ctx-strip">reading the sky&hellip;</p>
     </header>
 
+    <section class="modes" aria-label="When">
+      <button class="mode" id="mode-now" data-mode="now" aria-pressed="true">now</button>
+      <button class="mode" id="mode-tonight" data-mode="tonight" aria-pressed="false">tonight</button>
+      <button class="mode" id="mode-tomorrow" data-mode="tomorrow" aria-pressed="false">tomorrow</button>
+    </section>
+
     <section class="paths" aria-label="Narrow it down">
       <button class="chip" data-chip="free" aria-pressed="false">I'm broke</button>
       <button class="chip" data-chip="outside" aria-pressed="false">get me outside</button>
       <button class="chip" data-chip="people" aria-pressed="false">people, please</button>
       <button class="chip" data-chip="twohours" aria-pressed="false">I've got ~2 hours</button>
+      <button class="chip" data-chip="closeby" aria-pressed="false">close by</button>
+      <button class="chip" data-chip="hobby" aria-pressed="false">teach me something</button>
+    </section>
+
+    <section class="followup card" id="followup" hidden>
+      <p class="followup-line" id="followup-line"></p>
+      <div class="followup-actions">
+        <button class="btn btn-ghost" id="followup-yes">👍 worth it</button>
+        <button class="btn btn-ghost" id="followup-no">👎 not really</button>
+        <button class="sub-link" id="followup-skip">skip</button>
+      </div>
     </section>
 
     <div class="stage">

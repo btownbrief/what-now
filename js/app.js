@@ -10,6 +10,8 @@ const $ = (id) => document.getElementById(id);
 const state = {
   data: null,
   ctx: null,
+  om: null,         // Open-Meteo payload, kept so mode switches can rescore the sunset
+  mode: 'now',      // 'now' | 'tonight' | 'tomorrow'
   chips: new Set(),
   recent: loadRecent(), // recent answer ids — survives reloads so tomorrow opens fresh
   current: null,
@@ -38,9 +40,79 @@ function rememberAnswer(id) {
   } catch { /* fine */ }
 }
 
+/* ---------- follow-through: "you went to X — worth it?" ----------
+   All local, all optional. Commits land in wn_went; the next open (3h–48h
+   later) asks once, and the 👍/👎 becomes a light scoring nudge by
+   kind:category. Dismissing counts as answered — the app never nags. */
+
+function loadWent() {
+  try { return JSON.parse(localStorage.getItem('wn_went') || '[]'); } catch { return []; }
+}
+
+function saveWent(list) {
+  try { localStorage.setItem('wn_went', JSON.stringify(list.slice(-20))); } catch { /* fine */ }
+}
+
+function rememberWent(c) {
+  const list = loadWent();
+  list.push({ id: c.id, title: c.title, kind: c.kind, category: c.category || '', at: Date.now(), rating: null, asked: false });
+  saveWent(list);
+}
+
+function loadAffinity() {
+  const map = {};
+  for (const w of loadWent()) {
+    if (w.rating == null) continue;
+    const key = w.kind + ':' + (w.category || '');
+    map[key] = (map[key] || 0) + w.rating;
+  }
+  return map;
+}
+
+function maybeAskFollowup() {
+  const list = loadWent();
+  const age = (w) => Date.now() - w.at;
+  const due = [...list].reverse().find((w) => w.rating == null && !w.asked && age(w) > 3 * 3600 * 1000 && age(w) < 48 * 3600 * 1000);
+  if (!due) return;
+  const day = new Date(due.at).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/New_York' });
+  $('followup-line').textContent = `You went to ${due.title} on ${day} — worth it?`;
+  $('followup').hidden = false;
+  const settle = (rating) => {
+    due.rating = rating;
+    due.asked = true;
+    saveWent(list);
+    if (state.ctx) state.ctx.affinity = loadAffinity();
+    $('followup').hidden = true;
+  };
+  $('followup-yes').addEventListener('click', () => settle(1), { once: true });
+  $('followup-no').addEventListener('click', () => settle(-1), { once: true });
+  $('followup-skip').addEventListener('click', () => settle(null), { once: true });
+}
+
 const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 init();
+
+/* Build (or rebuild, on a mode switch) the context for the current mode,
+   scoring the sunset that belongs to the window being planned. */
+function makeCtx() {
+  const ctx = buildContext(state.data, new Date(), state.mode);
+  const ss = computeSunsetScore(ctx.sunsetT, state.om, state.data.weather);
+  ctx.sunsetScore = ss ? ss.score : null;
+  ctx.sunsetDegraded = ss ? ss.degraded : false;
+  ctx.affinity = loadAffinity();
+  return ctx;
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  state.ctx = makeCtx();
+  document.querySelectorAll('.mode').forEach((b) => {
+    b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
+  });
+  // if an answer is up, the new window should talk back immediately
+  if (!$('answer').hidden) doSpin(true);
+}
 
 async function init() {
   // Guide feeds gate the button (each request has its own timeout, so this
@@ -48,21 +120,19 @@ async function init() {
   // degraded NWS read and upgrades in place when the cloud layers land.
   const { data, status } = await loadAll();
   state.data = data;
-
-  const ctx = buildContext(data);
-  const ss = computeSunsetScore(ctx.sunset, null, data.weather);
-  ctx.sunsetScore = ss ? ss.score : null;
-  ctx.sunsetDegraded = ss ? ss.degraded : false;
-  state.ctx = ctx;
+  state.ctx = makeCtx();
+  const ctx = state.ctx;
 
   fetchCloudLayers().then((om) => {
     if (!om) return;
-    const better = computeSunsetScore(ctx.sunset, om, data.weather);
+    state.om = om;
+    const cur = state.ctx;
+    const better = computeSunsetScore(cur.sunsetT, om, data.weather);
     if (!better) return;
-    ctx.sunsetScore = better.score;
-    ctx.sunsetDegraded = better.degraded;
-    renderContextStrip(ctx);
-    renderTonight(ctx, data);
+    cur.sunsetScore = better.score;
+    cur.sunsetDegraded = better.degraded;
+    renderContextStrip(cur);
+    renderTonight(cur, data);
   });
 
   paintPhase(ctx);
@@ -70,6 +140,18 @@ async function init() {
   renderContextStrip(ctx);
   renderTonight(ctx, data);
   renderFooter(ctx, data, status);
+  maybeAskFollowup();
+
+  // offline app shell (data still needs the network; the app itself doesn't)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* fine — still a website */ });
+  }
+
+  // planning modes: "tonight" only makes sense before the evening's over
+  if (ctx.hour >= 21) $('mode-tonight').hidden = true;
+  document.querySelectorAll('.mode').forEach((b) => {
+    b.addEventListener('click', () => setMode(b.dataset.mode));
+  });
 
   state.ready = true;
   const spin = $('spin');
@@ -95,8 +177,10 @@ async function init() {
   $('share').addEventListener('click', shareAnswer);
 
   // preview hooks, same spirit as the sunset page's ?sscore= overrides:
-  // ?chips=free,outside preselects paths, ?auto=1 spins on load, ?done=1 shows the end state
+  // ?chips=free,outside preselects paths, ?auto=1 spins on load,
+  // ?mode=tonight|tomorrow preselects the window, ?done=1 shows the end state
   const qs = new URLSearchParams(location.search);
+  if (['tonight', 'tomorrow'].includes(qs.get('mode'))) setMode(qs.get('mode'));
   if (qs.get('chips')) {
     qs.get('chips').split(',').forEach((k) => {
       const chip = document.querySelector(`.chip[data-chip="${CSS.escape(k)}"]`);
@@ -250,10 +334,11 @@ async function shareAnswer() {
 
 function renderEmpty() {
   const ctx = state.ctx;
-  // Only pitch the waterfront walk when a walk is actually a good idea:
-  // daylight, dry, above-freezing-ish, and nothing dangerous in the sky.
-  const walkable = ctx && !ctx.dark && !ctx.rainingNow
-    && ctx.temp != null && ctx.temp >= 40
+  // Only pitch the waterfront walk when a walk is actually a good idea in
+  // the window being planned: daylight, dry, above-freezing-ish, and
+  // nothing dangerous in the sky.
+  const walkable = ctx && !ctx.darkAtTarget && !ctx.rainT
+    && ctx.tempT != null && ctx.tempT >= 40
     && !outdoorRisks(ctx).length;
   $('answer-kicker').textContent = 'honestly?';
   $('answer-title').textContent = 'Nothing fits all that.';
@@ -274,7 +359,25 @@ function renderAnswer(c) {
   const link = $('answer-link');
   if (c.url) { link.href = c.url; link.hidden = false; } else { link.hidden = true; }
 
-  $('pool-note').textContent = `picked from ${state.poolSize} things that fit right now`;
+  $('pool-note').textContent = `picked from ${state.poolSize} things that fit ${modeWord()}${smallHatNote()}`;
+}
+
+function modeWord() {
+  return state.mode === 'tonight' ? 'tonight' : state.mode === 'tomorrow' ? 'tomorrow' : 'right now';
+}
+
+/* When the hat is small, say why — a thin pool at a rainy 2am is honesty,
+   not failure. */
+function smallHatNote() {
+  if (state.poolSize >= 8) return '';
+  const ctx = state.ctx;
+  const reasons = [];
+  if (ctx.block === 'Late Night' && state.mode === 'now') reasons.push("it's late");
+  if (ctx.rainT) reasons.push("it's raining");
+  else if (ctx.tempT != null && ctx.tempT <= 20) reasons.push("it's bitter out");
+  if (ctx.tempT == null) reasons.push("we can't read the sky");
+  if (state.chips.size >= 2) reasons.push('the filters are tight');
+  return reasons.length ? ` — the hat's small because ${reasons.slice(0, 2).join(' and ')}` : '';
 }
 
 function metaLine(c) {
@@ -296,6 +399,8 @@ function metaLine(c) {
     if (c.beach && c.beach.sampled) bits.push('water tested clean');
   } else if (c.kind === 'club') {
     bits.push(c.venue);
+  } else if (c.kind === 'hobby') {
+    bits.push(c.venue); // the season line
   }
   return bits.filter(Boolean).join(' · ');
 }
@@ -303,6 +408,7 @@ function metaLine(c) {
 function blurbFor(c) {
   if (c.kind === 'thing') return c.blurb || '';
   if (c.kind === 'club') return trim(c.what, 160);
+  if (c.kind === 'hobby') return trim(c.startLine ? `${c.what} Start: ${c.startLine}` : c.what, 280);
   if (c.kind === 'sunset') return c.why || 'Look west. That’s the whole assignment.';
   if (c.kind === 'beach') return 'Towel, water, done. This is what the lake is for.';
   return '';
@@ -377,6 +483,7 @@ function renderFooter(ctx, data, status) {
 
 function showDone() {
   const c = state.current;
+  if (c) rememberWent(c); // so next open can ask "worth it?"
   $('done-what').textContent = c ? `${c.title}${metaLine(c) ? ' — ' + metaLine(c) : ''}` : '';
   $('done').hidden = false;
 }

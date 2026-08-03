@@ -15,15 +15,22 @@ screen and one decision.
 1. **It reads the moment.** Time of day, day of week, temperature, rain chance,
    lake temperature, beach water quality, air quality, and tonight's sunset —
    all live.
-2. **You optionally narrow the path**, in your own words:
-   *I'm broke · get me outside · people, please · I've got ~2 hours.*
-3. **You hit the big button.** A quick slot-machine roll, then one answer with
+2. **You pick the window** — *now · tonight · tomorrow*. Planning modes
+   judge conditions at the target time: tonight leans on the hourly
+   forecast, tomorrow on the NWS day period.
+3. **You optionally narrow the path**, in your own words:
+   *I'm broke · get me outside · people, please · I've got ~2 hours ·
+   close by · teach me something.* "Close by" only claims what it can
+   verify: coordinates within a ~15-minute walk of Church Street, or the
+   walkable core neighborhoods. "Teach me something" swaps the pool for the
+   guide's 39 hobbies-with-on-ramps, month-gated to what's in season.
+4. **You hit the big button.** A quick slot-machine roll, then one answer with
    its reasoning spelled out: *"because it starts in 45 min · it's free ·
    it's 77° out."*
-4. **"Nah, again"** re-spins (it remembers what it already suggested for ~20
+5. **"Nah, again"** re-spins (it remembers what it already suggested for ~20
    hours, so tomorrow doesn't open with yesterday's answer). **"I'm going"**
    ends the session on purpose.
-5. Under the answer: **🎲 pure chance** (ignore the filters and the ranking —
+6. Under the answer: **🎲 pure chance** (ignore the filters and the ranking —
    uniform from the hat, though the hat itself only ever holds safe,
    right-now answers) and **drag a friend →** (share sheet on phones,
    copy-to-clipboard elsewhere).
@@ -49,6 +56,15 @@ respins, pure chance — can reach an unsafe or nonsensical answer:
 - **Clubs keep their hours.** Clubs only show 8 a.m.–10 p.m., day-specific
   schedules ("Tuesdays 7pm") only show on their day, and a club is only
   called free when it says it's free.
+- **Planning is forecast-honest.** Tonight uses the hourly read nearest
+  7 p.m.; tomorrow uses the NWS day period. A missing forecast for the
+  window = no outdoor answers for that window, same as a missing current
+  reading. The swim stays a now-only answer — tomorrow's water status is
+  tomorrow's news.
+- **Taste nudges, privately.** After you tap "I'm going," the next open
+  asks *"worth it?"* once. The 👍/👎 lives in localStorage only and nudges
+  that category a few points — it never removes anything and never leaves
+  the phone. No accounts, no server, no tracking.
 - **Honesty on failure.** Every fetch has an 8s timeout; a stalled feed
   can't hold the app at "warming up". Stale caches are served for at most
   24h and the footer says what's actually live — "Live data" is earned,
@@ -68,6 +84,7 @@ pipeline:
 | Weather + lake + sun + AQI | `data/weather/latest.json` | context scoring, the header strip, phase-aware sky |
 | Beach water quality | `data/weather/beaches.json` | the "go swim" answer, only when beaches test clean |
 | Sunset spots | `data/sunset-spots.json` | "be at Oakledge by 7:56" |
+| 39 hobbies with local on-ramps | `data/hobbies.json` | the "teach me something" path, month-gated |
 | Open-Meteo cloud layers (keyless) | `api.open-meteo.com` | the sunset score |
 
 The **sunset score** is a port of the guide's `sunset.js` math: high clouds are
@@ -84,9 +101,12 @@ weighted-random from the top so re-spins stay good *and* surprising.
 ## Stack
 
 Static vanilla JS (ES modules), no build step, no dependencies. Btown Brief
-reel design family: black ground, glass cards, Instrument Serif + DM Sans,
-gold accent, and a phase-aware sky gradient (dawn/day/golden/dusk/night from
-real sun times). Shared family nav via `play.btownbrief.com/nav.js`.
+reel design family: black ground, glass cards, Instrument Serif + DM Sans
+(self-hosted woff2 — no Google Fonts request), gold accent, and a phase-aware
+sky gradient (dawn/day/golden/dusk/night from real sun times). Shared family
+nav via `play.btownbrief.com/nav.js`. A service worker caches the app shell
+for offline opens; data is never served from it, so the freshness rules in
+`data.js` stay in charge.
 
 Installable: web manifest + icons + apple-touch meta. Add to Home Screen and
 it opens standalone, which is the intended way to use it — in standalone mode
@@ -105,6 +125,7 @@ open http://localhost:8642
 
 Preview hooks (same spirit as the sunset page's `?sscore=`):
 `?auto=1` spins on load · `?chips=free,outside` preselects paths ·
+`?mode=tonight|tomorrow` preselects the window ·
 `?wild=1` pulls a pure-chance answer · `?done=1` shows the end state.
 
 ## Tests
@@ -116,10 +137,16 @@ straight in Node (the UTC env proves Burlington time wins over device time):
 TZ=UTC node --test test/engine.test.mjs
 ```
 
+`scripts/check-contracts.mjs` proves the deployed guide feeds still carry
+every field the app consumes (a rename would otherwise silently empty part
+of the pool); CI runs both on every push and every Monday morning.
+
 ## Honest limitations (v1)
 
-- Answers assume "today"; there's no "plan tomorrow" mode yet.
+- Planning covers tonight and tomorrow; nothing further out — a decision
+  app, not a calendar.
 - Data caches in localStorage for 10 minutes (stale copies serve for at most
   24h after a failed fetch, labeled as such) — fine for a decision app.
-- Hobby *discovery* is limited to what clubs.json and things.json carry; a
-  dedicated "pick up a hobby" path is the obvious v2.
+- "Close by" can only vouch for entries with coordinates or a walkable-core
+  neighborhood — events without coordinates don't count as close, even when
+  they are.

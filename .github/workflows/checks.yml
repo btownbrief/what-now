@@ -1,0 +1,27 @@
+# Engine tests on every push/PR; live-contract checks too, plus a weekly
+# run so a guide pipeline rename can't silently empty the candidate pool
+# between code changes.
+name: checks
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '17 11 * * 1' # Mondays 11:17 UTC (~7am Burlington)
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Engine edge-case tests (Burlington time under a UTC clock)
+        run: TZ=UTC node --test test/engine.test.mjs
+      - name: Engine tests again under a west-coast clock
+        run: TZ=America/Los_Angeles node --test test/engine.test.mjs
+      - name: Syntax-check every script
+        run: for f in js/*.js sw.js; do node --check "$f"; done
+      - name: Live guide feed contracts
+        run: node scripts/check-contracts.mjs

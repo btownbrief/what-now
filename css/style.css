@@ -4,6 +4,29 @@
    answer lives in. Glass cards, hairline borders, one gold accent. The big
    button breathes because it's the whole app. */
 
+/* Self-hosted fonts (latin subsets) — the app makes no Google request. */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/instrument-serif-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/instrument-serif-italic-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 300 600;
+  font-display: swap;
+  src: url('../assets/fonts/dm-sans-latin.woff2') format('woff2');
+}
+
 :root {
   --ground: #06080A;
   --ink: #F2F0EA;
@@ -116,11 +139,54 @@ body {
 
 /* ---------- path chips ---------- */
 
+/* now · tonight · tomorrow — quiet text toggles, not another chip row */
+.modes {
+  display: flex;
+  gap: 1.2rem;
+  justify-content: center;
+  margin-bottom: .9rem;
+}
+.mode {
+  min-height: 44px; /* comfortable thumb target */
+  background: none;
+  border: none;
+  padding: 0 .3rem;
+  font-family: var(--ui);
+  font-size: .84rem;
+  letter-spacing: .04em;
+  color: var(--ink-faint);
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: color .22s var(--ease), border-color .22s var(--ease);
+}
+.mode:hover { color: var(--ink-soft); }
+.mode[aria-pressed="true"] { color: var(--gold); border-bottom-color: var(--gold); }
+
 .paths {
   display: flex;
   flex-wrap: wrap;
   gap: .5rem;
   justify-content: center;
+}
+
+/* "worth it?" follow-through card — one small question, easily dismissed */
+.followup {
+  margin: 1rem auto 0;
+  max-width: 30rem;
+  padding: .9rem 1.1rem;
+  text-align: center;
+}
+.followup-line {
+  margin: 0 0 .55rem;
+  font-size: .9rem;
+  color: var(--ink-soft);
+}
+.followup-actions {
+  display: flex;
+  gap: .6rem;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .chip {

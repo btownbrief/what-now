@@ -534,7 +534,7 @@ function beachCandidate(ctx) {
     free: true,
     outdoor: true,
     beach,
-    url: 'https://guide.btownbrief.com/index.html#beaches',
+    url: 'https://guide.btownbrief.com/beaches.html',
   };
 }
 
